@@ -1,0 +1,49 @@
+{
+  "name": "optima-order-sync",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "dev": "concurrently -k 'npm run dev -w apps/api' 'npm run dev -w apps/web'",
+    "db:migrate": "tsx --env-file=.env apps/api/src/migrate.ts",
+    "test": "vitest run && python3 -m unittest discover -s scripts -p 'test_*.py'",
+    "typecheck": "tsc --noEmit && tsc -p apps/web/tsconfig.json",
+    "lint": "eslint .",
+    "build": "tsc && mkdir -p dist/apps/api/src/db && cp apps/api/src/db/0001.sql dist/apps/api/src/db/0001.sql && npm run build -w apps/web",
+    "mock:send": "tsx --env-file=.env scripts/mock-webhook.ts",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "start": "node --env-file=.env dist/apps/api/src/server.js",
+    "hubspot:verify": "tsx --env-file=.env scripts/verify-hubspot.ts",
+    "smoke:live": "tsx --env-file=.env scripts/smoke-test.ts"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.4.1",
+    "drizzle-orm": "^0.45.4",
+    "express": "^5.1.0",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.0",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/express": "^5.0.5",
+    "@types/node": "^24.10.0",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
+    "@types/supertest": "^6.0.3",
+    "concurrently": "^9.2.1",
+    "eslint": "^9.39.0",
+    "globals": "^16.5.0",
+    "prettier": "^3.9.10",
+    "supertest": "^7.1.4",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.46.2",
+    "vitest": "^5.0.5"
+  }
+}

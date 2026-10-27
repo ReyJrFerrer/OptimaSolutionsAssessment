@@ -1,0 +1,130 @@
+:root {
+  font-family: system-ui, sans-serif;
+  color: #172d3b;
+  background: #f4f7f9;
+  font-synthesis: none;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+}
+main {
+  max-width: 1500px;
+  margin: auto;
+  padding: 40px 24px;
+}
+header {
+  margin-bottom: 32px;
+}
+h1 {
+  font-size: clamp(1.8rem, 4vw, 2.6rem);
+  margin: 0.4em 0;
+}
+.eyebrow {
+  letter-spacing: 0.12em;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #32665f;
+}
+form {
+  padding: 20px;
+  background: white;
+  border: 1px solid #ccd9df;
+  border-radius: 10px;
+}
+label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.access {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+input {
+  min-width: 180px;
+  flex: 1;
+  max-width: 420px;
+  padding: 10px;
+  border: 1px solid #81949e;
+  border-radius: 5px;
+}
+button {
+  padding: 10px 16px;
+  border: 1px solid #226459;
+  border-radius: 5px;
+  background: #226459;
+  color: white;
+  cursor: pointer;
+  font-weight: 600;
+}
+button:disabled {
+  background: #dce4e8;
+  color: #475d68;
+  border-color: #b8c7ce;
+  cursor: default;
+}
+button:focus-visible,
+input:focus-visible {
+  outline: 3px solid #ce8800;
+  outline-offset: 3px;
+}
+small {
+  display: block;
+  font-size: 0.8rem;
+  color: #4c626e;
+  margin-top: 6px;
+}
+.table-wrap {
+  overflow: auto;
+  background: white;
+  border: 1px solid #ccd9df;
+  border-radius: 8px;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+caption {
+  text-align: left;
+  padding: 16px;
+  font-weight: 600;
+}
+th,
+td {
+  text-align: left;
+  padding: 14px;
+  border-top: 1px solid #dce4e8;
+  vertical-align: top;
+  max-width: 300px;
+  overflow-wrap: anywhere;
+}
+th {
+  background: #eaf0f3;
+  white-space: nowrap;
+}
+.succeeded {
+  color: #176036;
+  font-weight: 600;
+}
+.failed,
+.error {
+  color: #9c2222;
+  font-weight: 600;
+}
+.processing {
+  color: #785400;
+  font-weight: 600;
+}
+@media (max-width: 600px) {
+  main {
+    padding: 24px 12px;
+  }
+  form {
+    padding: 14px;
+  }
+}
