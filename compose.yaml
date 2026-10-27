@@ -49,6 +49,46 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:2.44.7
+    profiles: [automation]
+    user: '1000:1000'
+    environment:
+      NODE_FUNCTION_ALLOW_BUILTIN: crypto
+      N8N_RUNNERS_ENABLED: 'true'
+      N8N_RUNNERS_MODE: internal
+      N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: 'true'
+      N8N_HOST: localhost
+      N8N_PORT: 5678
+      N8N_PROTOCOL: http
+      N8N_EDITOR_BASE_URL: http://localhost:${N8N_HOST_PORT:-5678}
+      WEBHOOK_URL: http://localhost:${N8N_HOST_PORT:-5678}/
+      # Local HTTP only; published ports remain bound to loopback.
+      N8N_SECURE_COOKIE: 'false'
+      N8N_DIAGNOSTICS_ENABLED: 'false'
+      N8N_VERSION_NOTIFICATIONS_ENABLED: 'false'
+      TZ: Asia/Manila
+      GENERIC_TIMEZONE: Asia/Manila
+    ports:
+      - '127.0.0.1:${N8N_HOST_PORT:-5678}:5678'
+    volumes:
+      - n8n-data:/home/node/.n8n
+      - ./n8n:/workflows:ro
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 1m
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:5678/healthz/readiness',{signal:AbortSignal.timeout(3000)}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      start_period: 60s
+      retries: 6
   exporter:
     image: python:3.13-slim
     profiles: [tools]
@@ -63,3 +103,6 @@ services:
     command: ['--output', '/exports/deals_last_7_days.csv']
 volumes:
   app-data:
+  n8n-data:
+    name: ${N8N_DATA_VOLUME:-${COMPOSE_PROJECT_NAME}_n8n-data}
+    external: ${N8N_DATA_EXTERNAL:-false}
