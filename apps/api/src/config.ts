@@ -6,6 +6,7 @@ const schema = z.object({
   WEBHOOK_SECRET: z.string().min(32),
   DASHBOARD_ADMIN_TOKEN: z.string().min(32),
   HUBSPOT_PHP_CONFIRMED: z.enum(['true', 'false']).default('false'),
+  HOST: z.string().min(1).default('127.0.0.1'),
   PORT: z.coerce.number().int().min(1).max(65535).default(3001),
   DATABASE_PATH: z.string().default('./data/orders.sqlite'),
 });

@@ -8,6 +8,7 @@ const env = {
   DASHBOARD_ADMIN_TOKEN: 'a'.repeat(32),
   HUBSPOT_PHP_CONFIRMED: 'true' as const,
   PORT: 3001,
+  HOST: '127.0.0.1',
   DATABASE_PATH: ':memory:',
 };
 const json = (body: unknown, status = 200) =>

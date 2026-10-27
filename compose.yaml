@@ -1,0 +1,65 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 3001
+      DATABASE_PATH: /data/orders.sqlite
+      HUBSPOT_ACCESS_TOKEN: ${HUBSPOT_ACCESS_TOKEN:?Set HUBSPOT_ACCESS_TOKEN in .env}
+      HUBSPOT_PIPELINE_ID: ${HUBSPOT_PIPELINE_ID:-default}
+      HUBSPOT_DEAL_STAGE_ID: ${HUBSPOT_DEAL_STAGE_ID:-closedwon}
+      HUBSPOT_PHP_CONFIRMED: ${HUBSPOT_PHP_CONFIRMED:-false}
+      WEBHOOK_SECRET: ${WEBHOOK_SECRET:?Set WEBHOOK_SECRET in .env}
+      DASHBOARD_ADMIN_TOKEN: ${DASHBOARD_ADMIN_TOKEN:?Set DASHBOARD_ADMIN_TOKEN in .env}
+    ports:
+      - '127.0.0.1:${API_HOST_PORT:-3001}:3001'
+    volumes:
+      - app-data:/data
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 10m
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3001/health',{signal:AbortSignal.timeout(3000)}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    ports:
+      - '127.0.0.1:${WEB_HOST_PORT:-5173}:8080'
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test:
+        ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://127.0.0.1:8080/health']
+      interval: 10s
+      timeout: 5s
+      retries: 3
+  exporter:
+    image: python:3.13-slim
+    profiles: [tools]
+    working_dir: /work
+    user: '${EXPORT_UID:-1000}:${EXPORT_GID:-1000}'
+    environment:
+      HUBSPOT_ACCESS_TOKEN: ${HUBSPOT_ACCESS_TOKEN:?Set HUBSPOT_ACCESS_TOKEN in .env}
+    volumes:
+      - ./scripts/export_recent_deals.py:/work/scripts/export_recent_deals.py:ro
+      - ./exports:/exports
+    entrypoint: ['python', 'scripts/export_recent_deals.py']
+    command: ['--output', '/exports/deals_last_7_days.csv']
+volumes:
+  app-data:

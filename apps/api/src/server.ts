@@ -21,8 +21,8 @@ const server = createApp(
   store,
   env.WEBHOOK_SECRET,
   env.DASHBOARD_ADMIN_TOKEN,
-).listen(env.PORT, '127.0.0.1', () =>
-  console.log(`API listening at http://127.0.0.1:${env.PORT}`),
+).listen(env.PORT, env.HOST, () =>
+  console.log(`API listening at http://${env.HOST}:${env.PORT}`),
 );
 const stop = startWorker(store, client);
 let closing = false;
