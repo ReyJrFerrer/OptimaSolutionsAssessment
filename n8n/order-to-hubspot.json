@@ -1,0 +1,462 @@
+{
+  "name": "Optima - Order to HubSpot Sync",
+  "nodes": [
+    {
+      "id": "e4df81b4-9eb6-54ee-b9d7-72c0e04a5c0b",
+      "name": "Order Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [0, 0],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "optima-orders",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": true
+        }
+      },
+      "webhookId": "44483a08-2028-489a-a4c1-97b510fa91ef"
+    },
+    {
+      "id": "087f66ad-e059-5329-9b1a-49eb20e8b1a4",
+      "name": "Read Raw Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 0],
+      "parameters": {
+        "jsCode": "const item = $input.first();\nconst raw = await this.helpers.getBinaryDataBuffer(0, 'data');\nreturn [{json: {raw: raw.toString('base64'), headers: item.json.headers}, binary: item.binary}];"
+      }
+    },
+    {
+      "id": "92fad7e8-7c82-56f0-bbf7-491661396206",
+      "name": "Compute HMAC",
+      "type": "n8n-nodes-base.crypto",
+      "typeVersion": 2,
+      "position": [440, 0],
+      "parameters": {
+        "action": "hmac",
+        "binaryData": true,
+        "binaryPropertyName": "data",
+        "type": "SHA256",
+        "dataPropertyName": "expectedSignature",
+        "encoding": "hex"
+      },
+      "credentials": {
+        "crypto": {
+          "id": "CONFIGURE_CRYPTO_CREDENTIAL",
+          "name": "Optima Order HMAC"
+        }
+      }
+    },
+    {
+      "id": "f0c1dc82-c1c2-522e-b663-a2f4551116db",
+      "name": "Verify Signature and Validate Order",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [660, 0],
+      "parameters": {
+        "jsCode": "const {timingSafeEqual} = require('crypto');\nconst j = $input.first().json;\nconst reject = (http, error) => [{json:{done:true,http,body:{success:false,error}}}];\nconst sig = j.headers['x-order-signature'];\nif (typeof sig !== 'string' || !/^sha256=[a-f0-9]{64}$/.test(sig) ||\n    !timingSafeEqual(Buffer.from(sig.slice(7),'hex'), Buffer.from(j.expectedSignature,'hex')))\n  return reject(401,'INVALID_SIGNATURE');\nconst raw = Buffer.from(j.raw,'base64');\nif(raw.length > 262144) return reject(413,'BODY_TOO_LARGE');\nif(j.headers['content-encoding'] && j.headers['content-encoding'] !== 'identity') return reject(415,'UNSUPPORTED_CONTENT_ENCODING');\nif(!/^application\\/json(?:;|$)/i.test(j.headers['content-type'] || '')) return reject(415,'JSON_REQUIRED');\nlet p;\ntry { p = JSON.parse(raw.toString('utf8')); } catch { return reject(400,'INVALID_JSON'); }\nconst text = (v,max=200) => typeof v === 'string' && v.trim().length > 0 && v.trim().length <= max;\nconst money = v => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 1e9 && Math.abs(v*100-Math.round(v*100)) < .00001;\nconst email = v => typeof v === 'string' && v.trim().length <= 254 && /^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$/.test(v.trim());\nconst date = v => {\n if(typeof v !== 'string' || !/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$/.test(v) || !Number.isFinite(Date.parse(v))) return false;\n const [year,month,day] = v.slice(0,10).split('-').map(Number);\n const leap=year%4===0 && (year%100!==0 || year%400===0);\n const days=[31,leap?29:28,31,30,31,30,31,31,30,31,30,31];\n return month>=1 && month<=12 && day>=1 && day<=days[month-1] && Number(v.slice(11,13))<24;\n};\nif(!p || p.event !== 'order.created' || !text(p.order_id) || !/^[A-Za-z0-9_-]+$/.test(p.order_id.trim()) || !date(p.created_at) || p.currency !== 'PHP' || !money(p.total) || !p.customer || !email(p.customer.email) || !text(p.customer.first_name) || !text(p.customer.last_name) || (p.customer.phone !== undefined && !text(p.customer.phone,50)) || !Array.isArray(p.items) || !p.items.length || p.items.length>500 || p.items.some(i=>!i || !text(i.name) || !Number.isInteger(i.quantity) || i.quantity<=0 || i.quantity>100000 || !money(i.price))) return reject(400,'INVALID_ORDER');\nconst sum=p.items.reduce((s,i)=>s+i.quantity*Math.round(i.price*100),0);\nif(!Number.isSafeInteger(sum) || sum!==Math.round(p.total*100)) return reject(400,'TOTAL_MISMATCH');\nconst order={event:p.event,order_id:p.order_id.trim(),created_at:p.created_at,customer:{email:p.customer.email.trim().toLowerCase(),first_name:p.customer.first_name.trim(),last_name:p.customer.last_name.trim(),...(p.customer.phone===undefined?{}:{phone:p.customer.phone.trim()})},items:p.items.map(i=>({name:i.name.trim(),quantity:i.quantity,price:i.price})),total:p.total,currency:p.currency};\nreturn [{json:{order,stage:'property',retry:0,config:{pipeline:'default',stage:'closedwon',phpConfirmed:false}}}];"
+      }
+    },
+    {
+      "id": "694421fa-d1fc-55f5-97ca-9b21620b7626",
+      "name": "Valid Order",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [880, 0],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "Valid Order",
+              "leftValue": "={{ $json.done !== true }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "37dbfccf-476f-5054-9a02-d6eb69a2e247",
+      "name": "Plan HubSpot Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1100, 0],
+      "parameters": {
+        "jsCode": "const s = $input.first().json;\nconst o=s.order, c=o.customer, root='/crm/objects/2026-09';\nif(!s.config.phpConfirmed) return [{json:{...s,done:true,failure:true,http:502,body:{success:false,error:'PHP_CURRENCY_NOT_CONFIRMED'},safeError:`OPTIMA PHP_CURRENCY_NOT_CONFIRMED order=${o.order_id} stage=configuration`}}];\nconst contactProperties={email:c.email,firstname:c.first_name,lastname:c.last_name,...(c.phone?{phone:c.phone}:{})};\nconst filter=(propertyName,value)=>({filterGroups:[{filters:[{propertyName,operator:'EQ',value}]}],limit:1});\nconst requests={\n property:['GET','/crm/properties/2026-09/deals/external_order_id'],\n pipeline:['GET','/crm/pipelines/2026-09/deals/'+encodeURIComponent(s.config.pipeline)],\n dealSearch:['POST',root+'/deals/search',filter('external_order_id',o.order_id)],\n dealLookup:['GET',root+'/deals/'+encodeURIComponent(o.order_id)+'?idProperty=external_order_id'],\n contactSearch:['POST',root+'/contacts/search',filter('email',c.email)],\n contactLookup:['GET',root+'/contacts/'+encodeURIComponent(c.email)+'?idProperty=email'],\n contactCreate:['POST',root+'/contacts',{properties:contactProperties}],\n contactUpdate:['PATCH',root+'/contacts/'+encodeURIComponent(s.contactId),{properties:contactProperties}],\n dealCreate:['POST',root+'/deals',{properties:{dealname:`Order ${o.order_id} \u2014 ${c.first_name} ${c.last_name}`,amount:o.total.toFixed(2),closedate:new Date(o.created_at).toISOString(),pipeline:s.config.pipeline,dealstage:s.config.stage,deal_currency_code:o.currency,external_order_id:o.order_id,description:o.items.map(i=>`${i.quantity} \u00d7 ${i.name}`).join('; ').slice(0,2000)},associations:[{to:{id:s.contactId},types:[{associationCategory:'HUBSPOT_DEFINED',associationTypeId:3}]}]}],\n associate:['PUT',root+'/deals/'+encodeURIComponent(s.dealId)+'/associations/default/contacts/'+encodeURIComponent(s.contactId)]\n};\nconst r=requests[s.stage];\nif(!r) throw Error('OPTIMA INVALID_STATE');\nreturn [{json:{...s,request:{method:r[0],url:'https://api.hubapi.com'+r[1],body:r[2]??{}}}}];"
+      }
+    },
+    {
+      "id": "a9749cbd-e600-51d2-a419-58ea9c4f0309",
+      "name": "Request Ready",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1320, 0],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "Request Ready",
+              "leftValue": "={{ $json.done !== true }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "f8cc18d6-86b2-58d7-9e11-e0dc077482ac",
+      "name": "HubSpot Request",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [1540, 0],
+      "parameters": {
+        "method": "={{ $json.request.method }}",
+        "url": "={{ $json.request.url }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.request.body) }}",
+        "options": {
+          "timeout": 10000,
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          },
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "text",
+              "outputPropertyName": "body"
+            }
+          }
+        },
+        "contentType": "json",
+        "bodyParameters": {
+          "parameters": []
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "CONFIGURE_HUBSPOT_CREDENTIAL",
+          "name": "Optima HubSpot Service Key"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "2bfd4bcd-8aea-54b2-bd73-955308310705",
+      "name": "Handle HubSpot Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1760, 0],
+      "parameters": {
+        "jsCode": "const s=JSON.parse(JSON.stringify($('Plan HubSpot Request').item.json));\nconst r=$input.first().json;\nconst status=Number(r.statusCode || 0);\nlet b=r.body || {};\nconst fail=code=>[{json:{...s,done:true,failure:true,http:502,body:{success:false,error:code},safeError:`OPTIMA ${code} order=${s.order.order_id} stage=${s.stage}`}}];\n// Read text first so empty/non-JSON error bodies cannot hide HTTP status.\nif(typeof b==='string') {\n try { b=b.trim()?JSON.parse(b):{}; }\n catch { if(status>=200 && status<300) return fail('HUBSPOT_INVALID_RESPONSE'); b={}; }\n}\nif(!b || typeof b!=='object' || Array.isArray(b)) {\n if(status>=200 && status<300) return fail('HUBSPOT_INVALID_RESPONSE');\n b={};\n}\nconst next=stage=>{s.stage=stage;s.retry=0;s.waitMs=0;return [{json:s}];};\nconst id=()=>{if(typeof b.id!=='string' || !b.id) throw Error('OPTIMA INVALID_RECORD_RESPONSE');return b.id;};\nconst lookup=s.stage==='dealLookup' || s.stage==='contactLookup';\nif(status===404 && lookup) {\n if(s.createConflict) return fail('CREATE_CONFLICT_UNRESOLVED');\n if(s.stage==='dealLookup') {\n  if(s.reconcileDeal) { s.reconcileDeal=false; return next('dealCreate'); }\n  return next('contactSearch');\n }\n s.reconcileContact=false; return next('contactCreate');\n}\nif(status<200 || status>=300) {\n const conflict=(status===400 || status===409) && (s.stage==='dealCreate' || s.stage==='contactCreate');\n const transient=status===0 || status===429 || status>=500;\n if((transient || conflict) && (s.retry||0)<3) {\n  s.retry=(s.retry||0)+1;\n  const h=r.headers?.['retry-after'];\n  const delay=h ? (Number.isFinite(Number(h))?Number(h)*1000:Date.parse(h)-Date.now()):0;\n  s.waitMs=Math.min(30000,Math.max(1000*2**(s.retry-1)+Math.random()*250,Number.isFinite(delay)?delay:0));\n  if(conflict) s.createConflict=true;\n  if(s.stage==='dealCreate') {s.reconcileDeal=true;s.createRetries=(s.createRetries||0)+1;s.stage='dealLookup';}\n  if(s.stage==='contactCreate') {s.reconcileContact=true;s.contactRetries=(s.contactRetries||0)+1;s.stage='contactLookup';}\n  if((s.createRetries||0)>3 || (s.contactRetries||0)>3) return fail('CREATE_RETRY_EXHAUSTED');\n  return [{json:s}];\n }\n return fail(status ? 'HUBSPOT_HTTP_'+status : 'HUBSPOT_NETWORK');\n}\nswitch(s.stage) {\n case 'property':\n  if(b.name!=='external_order_id' || b.type!=='string' || b.fieldType!=='text' || b.hasUniqueValue!==true) return fail('UNIQUE_PROPERTY_REQUIRED');\n  return next('pipeline');\n case 'pipeline':\n  if(!Array.isArray(b.stages) || !b.stages.some(v=>v.id===s.config.stage)) return fail('INVALID_PIPELINE_STAGE');\n  return next('dealSearch');\n case 'dealSearch':\n  if(!Array.isArray(b.results)) return fail('INVALID_SEARCH_RESPONSE');\n  if(b.results[0]) {s.dealId=b.results[0].id;s.duplicate=true;return next('contactSearch');}\n  return next('dealLookup');\n case 'dealLookup': s.dealId=id();s.duplicate=true;s.reconcileDeal=false;s.createConflict=false;return next(s.contactId?'associate':'contactSearch');\n case 'contactSearch':\n  if(!Array.isArray(b.results)) return fail('INVALID_SEARCH_RESPONSE');\n  if(b.results[0]) {s.contactId=b.results[0].id;return next('contactUpdate');}\n  return next('contactLookup');\n case 'contactLookup': case 'contactCreate': s.contactId=id();s.reconcileContact=false;s.createConflict=false;return next('contactUpdate');\n case 'contactUpdate': return next(s.dealId?'associate':'dealCreate');\n case 'dealCreate': s.dealId=id();return next('associate');\n case 'associate': return [{json:{done:true,http:200,body:{success:true,order_id:s.order.order_id,contact_id:s.contactId,deal_id:s.dealId,status:s.duplicate?'already_synced':'synced',duplicate:!!s.duplicate}}}];\n default: return fail('INVALID_STATE');\n}"
+      }
+    },
+    {
+      "id": "3fcf0479-6a42-57a2-a3e4-15edb5747e31",
+      "name": "Sync Finished",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1980, 0],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "Sync Finished",
+              "leftValue": "={{ $json.done === true }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "417f0072-1d63-52f8-a8aa-dc66a91a3631",
+      "name": "Bounded Retry Wait",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [1760, 240],
+      "parameters": {
+        "resume": "timeInterval",
+        "amount": "={{ Math.max(0.001, ($json.waitMs || 0) / 1000) }}",
+        "unit": "seconds"
+      },
+      "webhookId": "27fe57b2-d1c3-4aa9-9baa-6ccd750e053e"
+    },
+    {
+      "id": "2a3bc020-320b-5786-a645-dd08fd6a9b6f",
+      "name": "Respond to Order",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [2200, 0],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.body }}",
+        "options": {
+          "responseCode": "={{ $json.http }}"
+        }
+      }
+    },
+    {
+      "id": "dc13665d-55fd-52e5-9f03-9dd904517047",
+      "name": "Operational Failure",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [2420, 0],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "Operational Failure",
+              "leftValue": "={{ $json.failure === true }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "4098b71e-eaa3-5741-aaa7-06beab9ce3f1",
+      "name": "Raise Operational Failure",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [2640, 0],
+      "parameters": {
+        "errorMessage": "={{ $json.safeError }}"
+      }
+    }
+  ],
+  "connections": {
+    "Order Webhook": {
+      "main": [
+        [
+          {
+            "node": "Read Raw Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Raw Request": {
+      "main": [
+        [
+          {
+            "node": "Compute HMAC",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compute HMAC": {
+      "main": [
+        [
+          {
+            "node": "Verify Signature and Validate Order",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify Signature and Validate Order": {
+      "main": [
+        [
+          {
+            "node": "Valid Order",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Valid Order": {
+      "main": [
+        [
+          {
+            "node": "Plan HubSpot Request",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond to Order",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Plan HubSpot Request": {
+      "main": [
+        [
+          {
+            "node": "Request Ready",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Request Ready": {
+      "main": [
+        [
+          {
+            "node": "HubSpot Request",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond to Order",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HubSpot Request": {
+      "main": [
+        [
+          {
+            "node": "Handle HubSpot Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Handle HubSpot Result": {
+      "main": [
+        [
+          {
+            "node": "Sync Finished",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sync Finished": {
+      "main": [
+        [
+          {
+            "node": "Respond to Order",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Bounded Retry Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Bounded Retry Wait": {
+      "main": [
+        [
+          {
+            "node": "Plan HubSpot Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond to Order": {
+      "main": [
+        [
+          {
+            "node": "Operational Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Operational Failure": {
+      "main": [
+        [
+          {
+            "node": "Raise Operational Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "none",
+    "saveManualExecutions": false,
+    "errorWorkflow": "CONFIGURE_ERROR_WORKFLOW_ID",
+    "executionTimeout": 600
+  },
+  "pinData": {}
+}

@@ -1,0 +1,78 @@
+{
+  "name": "Optima - HubSpot Sync Error Handler",
+  "nodes": [
+    {
+      "id": "f896ef29-d39c-5569-8efa-a63512d34dff",
+      "name": "Sync Failure Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [0, 0],
+      "parameters": {}
+    },
+    {
+      "id": "29e1509c-bbab-5f90-a15f-3020fd847d00",
+      "name": "Sanitize Failure Details",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [240, 0],
+      "parameters": {
+        "jsCode": "const j=$input.first().json, e=j.execution||{}, w=j.workflow||{};\nconst message=String(e.error?.message || j.trigger?.error?.message || '');\nconst match=message.match(/OPTIMA ([A-Z0-9_]+)(?: order=([A-Za-z0-9_-]{1,200}) stage=([A-Za-z]+))?/);\nconst safe=(v)=>typeof v==='string' && /^[A-Za-z0-9 _.-]{1,100}$/.test(v)?v:'unavailable';\nconst executionId=safe(e.id), reason=match?match[1]:'UNEXPECTED_EXECUTION_FAILURE';\n// Reconstruct the local execution link; never forward an arbitrary error URL.\nconst workflowId=safe(w.id);\nconst url=executionId==='unavailable' || workflowId==='unavailable'?'unavailable':'http://localhost:5678/workflow/'+encodeURIComponent(workflowId)+'/executions/'+encodeURIComponent(executionId);\nconst text=[`Workflow: ${safe(w.name)}`,`Order: ${match?.[2]||'unavailable'}`,`Failure timestamp: ${new Date().toISOString()}`,`Failed node: ${safe(e.lastNodeExecuted)}`,`Reason: ${reason}`,`Stage: ${match?.[3]||'unavailable'}`,`Execution ID: ${executionId}`,`Execution URL: ${url}`,'Action: Check credential assignment, token scopes, PHP confirmation, unique property and pipeline/stage. For 429/5xx wait then resend the SAME signed order; the unique Deal key reconciles uncertain creates.'].join('\\n');\nreturn [{json:{subject:'Optima HubSpot sync failure: '+reason,text}}];"
+      }
+    },
+    {
+      "id": "4e6c30b4-ae0d-50a2-a0c9-902968ad1296",
+      "name": "Email Operator",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [500, 0],
+      "parameters": {
+        "fromEmail": "configure-sender@example.com",
+        "toEmail": "configure-operator@example.com",
+        "subject": "={{ $json.subject }}",
+        "emailFormat": "text",
+        "text": "={{ $json.text }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "credentials": {
+        "smtp": {
+          "id": "CONFIGURE_SMTP_CREDENTIAL",
+          "name": "Optima Failure Notifications"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Sync Failure Trigger": {
+      "main": [
+        [
+          {
+            "node": "Sanitize Failure Details",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sanitize Failure Details": {
+      "main": [
+        [
+          {
+            "node": "Email Operator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "none",
+    "saveManualExecutions": false
+  },
+  "pinData": {}
+}
