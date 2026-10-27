@@ -1,4 +1,7 @@
 import { defineConfig } from 'vitest/config';
 export default defineConfig({
-  test: { include: ['apps/api/tests/**/*.test.ts'] },
+  test: {
+    include: ['tests/**/*.test.{ts,tsx}'],
+    setupFiles: ['tests/helpers/offline.ts'],
+  },
 });

@@ -2,11 +2,11 @@ import { describe, it, expect } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Store } from '../src/db/store.js';
-import { HubSpotClient } from '../src/hubspot.js';
-import { processOne } from '../src/worker.js';
-import { parseOrder } from '../src/order.js';
-import { sample } from './fixture.js';
+import { Store } from '../../apps/api/src/db/store.js';
+import { HubSpotClient } from '../../apps/api/src/hubspot.js';
+import { processOne } from '../../apps/api/src/worker.js';
+import { parseOrder } from '../../apps/api/src/order.js';
+import { sample } from '../fixtures/order.js';
 const reply = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status });
 describe('persistent worker with stubbed HubSpot', () => {

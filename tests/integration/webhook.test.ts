@@ -2,12 +2,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import request from 'supertest';
 import { gzipSync } from 'node:zlib';
 import { createHmac } from 'node:crypto';
-import { Store } from '../src/db/store.js';
-import { createApp } from '../src/app.js';
-import { parseOrder } from '../src/order.js';
-import { processOne } from '../src/worker.js';
+import { Store } from '../../apps/api/src/db/store.js';
+import { createApp } from '../../apps/api/src/app.js';
+import { parseOrder } from '../../apps/api/src/order.js';
+import { processOne } from '../../apps/api/src/worker.js';
 
-import { sample } from './fixture.js';
+import { sample } from '../fixtures/order.js';
 const stores: Store[] = [];
 function setup() {
   const store = new Store(':memory:');
@@ -146,6 +146,9 @@ describe('signed durable ingress', () => {
         .status,
     ).toBe(409);
     expect(store.get('TEST-1')!.status).toBe('queued');
+    expect(JSON.parse(store.get('TEST-1')!.payload_json).created_at).toBe(
+      sample.created_at,
+    );
     expect(store.claim()).toBeDefined();
     expect(store.claim()).toBeUndefined();
   });
